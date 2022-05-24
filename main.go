@@ -1,52 +1,47 @@
-package main
+package cache
 
 import (
-	"fmt"
-	"os"
-	"strings"
-
-	"github.com/cjlapao/common-go/execution_context"
-	"github.com/cjlapao/common-go/helper"
-	"github.com/cjlapao/common-go/version"
-	"github.com/cjlapao/go-template/startup"
+	"reflect"
 )
 
-var services = execution_context.Get().Services
+var globalCacheService *CacheService
 
-func main() {
-	services.Version.Name = "GoLang Template"
-	services.Version.Author = "Carlos Lapao"
-	services.Version.License = "MIT"
+type CacheProvider interface {
+	Get(name string) *interface{}
+	Set(name string, value interface{})
+}
 
-	services.Version.Major = 0
-	services.Version.Minor = 0
-	services.Version.Build = 0
-	services.Version.Rev = 1
+type CacheService struct {
+	Providers []CacheProvider
+}
 
-	getVersion := helper.GetFlagSwitch("version", false)
-	if getVersion {
-		format := helper.GetFlagValue("o", "json")
-		switch strings.ToLower(format) {
-		case "json":
-			fmt.Println(services.Version.PrintVersion(int(version.JSON)))
-		case "yaml":
-			fmt.Println(services.Version.PrintVersion(int(version.JSON)))
-		default:
-			fmt.Println("Please choose a valid format, this can be either json or yaml")
+func New() *CacheService {
+	globalCacheService = &CacheService{
+		Providers: make([]CacheProvider, 0),
+	}
+
+	return globalCacheService
+}
+
+func Get() *CacheService {
+	if globalCacheService != nil {
+		return globalCacheService
+	}
+
+	return New()
+}
+
+func (c *CacheService) RegisterProvider(providers ...CacheProvider) {
+	for _, registerProvider := range providers {
+		found := false
+		for _, provider := range c.Providers {
+			if reflect.TypeOf(provider) == reflect.TypeOf(registerProvider) {
+				found = true
+				break
+			}
 		}
-		os.Exit(0)
+		if !found {
+			c.Providers = append(c.Providers, registerProvider)
+		}
 	}
-
-	services.Version.PrintAnsiHeader()
-
-	configFile := helper.GetFlagValue("config", "")
-	if configFile != "" {
-		services.Logger.Command("Loading configuration from " + configFile)
-		services.Configuration.LoadFromFile(configFile)
-	}
-
-	defer func() {
-	}()
-
-	startup.Init()
 }
