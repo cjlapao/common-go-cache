@@ -1,29 +1,45 @@
 package cache
 
 import (
+	"fmt"
 	"reflect"
+	"strings"
+	"time"
 )
 
 var globalCacheService *CacheService
 
-type CacheProvider interface {
-	Get(name string) *interface{}
-	Set(name string, value interface{})
+type CachedItem struct {
+	Key         string
+	Item        CachedValue
+	RefreshedAt time.Time
+}
+
+type CachedValue interface {
+	Expired() bool
+}
+
+type CacheServiceConfiguration struct {
+	CacheItemExpiry time.Duration
 }
 
 type CacheService struct {
-	Providers []CacheProvider
+	Items         []CachedItem
+	Configuration CacheServiceConfiguration
 }
 
 func New() *CacheService {
 	globalCacheService = &CacheService{
-		Providers: make([]CacheProvider, 0),
+		Items: make([]CachedItem, 0),
+		Configuration: CacheServiceConfiguration{
+			CacheItemExpiry: time.Minute * 5,
+		},
 	}
 
 	return globalCacheService
 }
 
-func Get() *CacheService {
+func GetService() *CacheService {
 	if globalCacheService != nil {
 		return globalCacheService
 	}
@@ -31,17 +47,55 @@ func Get() *CacheService {
 	return New()
 }
 
-func (c *CacheService) RegisterProvider(providers ...CacheProvider) {
-	for _, registerProvider := range providers {
-		found := false
-		for _, provider := range c.Providers {
-			if reflect.TypeOf(provider) == reflect.TypeOf(registerProvider) {
-				found = true
-				break
+func Get[T any](name string) T {
+	var item T
+	if globalCacheService == nil {
+		return item
+	}
+	itemTypeString := strings.TrimLeft(fmt.Sprintf("%v", reflect.TypeOf(item)), "*")
+
+	for _, cachedItem := range globalCacheService.Items {
+		cachedItemTypeString := strings.TrimLeft(fmt.Sprintf("%v", reflect.TypeOf(cachedItem.Item)), "*")
+		if strings.EqualFold(name, cachedItem.Key) {
+			if strings.EqualFold(itemTypeString, cachedItemTypeString) && !cachedItem.Item.Expired() {
+				return cachedItem.Item.(T)
+			} else {
+				return item
 			}
 		}
-		if !found {
-			c.Providers = append(c.Providers, registerProvider)
+	}
+
+	return item
+}
+
+func Set(name string, item CachedValue) error {
+	found := false
+	if globalCacheService == nil {
+		New()
+	}
+
+	for _, cachedItem := range globalCacheService.Items {
+		if strings.EqualFold(name, cachedItem.Key) {
+			found = true
+			// updated item
+			cachedItem.Item = item
+			cachedItem.RefreshedAt = time.Now()
+			break
 		}
 	}
+
+	if !found {
+		globalCacheService.Items = append(globalCacheService.Items, CachedItem{
+			Key:         name,
+			Item:        item,
+			RefreshedAt: time.Now(),
+		})
+	}
+	return nil
+}
+
+func (c *CacheService) AddConfiguration(config CacheServiceConfiguration) *CacheService {
+	c.Configuration = config
+
+	return c
 }

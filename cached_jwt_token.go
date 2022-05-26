@@ -1,4 +1,4 @@
-package jwt_token_provider
+package cache
 
 import (
 	"time"
@@ -12,7 +12,7 @@ type CachedJwtToken struct {
 	AccessToken string `json:"access_token"`
 }
 
-func (t CachedJwtToken) IsExpired() bool {
+func (t CachedJwtToken) Expired() bool {
 	claims, err := jwt.ParseWithoutCheck([]byte(t.AccessToken))
 	if err != nil {
 		return false
